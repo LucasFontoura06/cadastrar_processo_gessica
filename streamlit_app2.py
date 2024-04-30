@@ -1,7 +1,28 @@
 import streamlit as st
+from auth import login, verify_token
+import streamlit_ace as st_ace
+import streamlit as st
 import sqlite3
 import pandas as pd
 import base64
+import time
+
+# Função para verificar o token JWT em cada rota protegida
+def verify_access():
+    token = st.session_state.token  # Obtém o token armazenado na sessão
+    
+    if not token:  # Se o token não estiver presente, redirecione para a página de login
+        st.error("Você não está autenticado. Faça login para acessar esta página.")
+        st.markdown('<meta http-equiv="refresh" content="5; URL=/" />', unsafe_allow_html=True)  # Redireciona para a página de login em 5 segundos
+        st.stop()  # Interrompe a execução do restante do código
+
+    # Verifica se o token é válido
+    decoded_token = verify_token(token)
+    if not decoded_token:  # Se o token não for válido, redirecione para a página de login
+        st.error("Sessão expirada ou token inválido. Faça login novamente.")
+        st.markdown('<meta http-equiv="refresh" content="5; URL=/" />', unsafe_allow_html=True)  # Redireciona para a página de login em 5 segundos
+        st.stop()  # Interrompe a execução do restante do código
+
 
 def create_table():
     # Conecta ao banco de dados
@@ -18,21 +39,17 @@ def create_table():
             CREATE TABLE formulario (
                 id INTEGER PRIMARY KEY,
                 Processo TEXT,
-                Unidade TEXT,
                 Interessado TEXT,
                 Especificações TEXT,
-                Resoluções TEXT,
                 Marcador TEXT,
+                Resoluções TEXT,
                 Data_protocolo DATE,
-                Data_recebido DATE,
-                Remetente_Unidade TEXT,
-                Num_Documento TEXT,
-                Prazo DATE,
-                Devoluitiva TEXT,
-                Doc_SEI TEXT,
-                Data_envio DATE,
-                Unidade_devoluitiva TEXT,
-                Data_De_Retorno DATE,
+                Data_recebimento_solicitacao DATE,
+                Doc_SEI1 TEXT,
+                Remetente_unidade TEXT,
+                Data_resposta DATE,
+                Doc_SEI2 TEXT,
+                Data_status DATE,
                 Status TEXT
             )
         ''')
@@ -41,11 +58,61 @@ def create_table():
     conn.commit()
     conn.close()
 
-def main():
+# Defina o tempo limite da sessão em segundos (por exemplo, 10 minutos)
+session_timeout = 600
 
-    # Menu lateral
+def login():
+    # Inicialize o estado da sessão se não estiver inicializado
+    if 'is_logged_in' not in st.session_state:
+        st.session_state.is_logged_in = False
+        st.session_state.last_active_time = time.time()
+
+    # Verificar se o estado de login está armazenado na sessão
+    is_logged_in = st.session_state.is_logged_in
+
+    # Verificar se a sessão expirou
+    if not is_logged_in and time.time() - st.session_state.last_active_time > session_timeout:
+        st.session_state.is_logged_in = False
+
+    # Se já estiver logado, não precisa mostrar o formulário de login
+    if is_logged_in:
+        st.session_state.last_active_time = time.time()  # Atualiza o tempo de última atividade
+        return True
+
+    # Formulário de login
+    username = st.sidebar.text_input("Usuário")
+    password = st.sidebar.text_input("Senha", type="password")
+    login_button = st.sidebar.button("Login")
+    
+    if login_button:
+        if username == "gessica.rossi" and password == "05052023":  
+            st.session_state.is_logged_in = True
+            st.success("Login bem-sucedido!")
+            return True
+        else:
+            st.error("Usuário ou senha incorretos. Por favor, tente novamente.")
+
+    return False
+
+
+
+def logout():
+    st.session_state.is_logged_in = False
+    st.session_state.last_active_time = time.time()  # Atualiza o tempo de última atividade
+    st.markdown('<meta http-equiv="refresh" content="0; URL=/" />', unsafe_allow_html=True)
+    return True
+
+
+def main():
+    if not login():
+        return
+
+    # Botão de logout
+    if st.sidebar.button("Logout"):
+        logout()
+        return
+
     menu_option = st.sidebar.selectbox("Menu", ["Cadastrar Processo", "Consultar Processo","Visualizar Todos os Registros", "Baixar Dados como CSV"])
-        
 
     if menu_option == "Cadastrar Processo":
         st.empty()
@@ -54,35 +121,28 @@ def main():
         st.markdown("---")
         st.markdown("### 1 - Identificação.")
         # Dados do Formulário
-        processo = st.text_input("Processo")
-        unidade = st.text_input("Unidade")
-        interessado = st.text_input("Interessado")
-        especificacoes = st.text_area("Especificações")
-        resolucoes = st.text_area("Resoluções")
-        marcador = st.text_input("Marcador")
+        processo = st.text_input("Processo", value="")
+        interessado = st.text_input("Interessado", value="")
+        especificacoes = st.text_area("Especificações", value="")
+        marcador_options = ["Opção 1", "Opção 2", "Opção 3"]  
+        marcador = st.selectbox("Marcador", options=marcador_options)
+        resolucoes = st.text_area("Resoluções", value="")
 
         st.markdown("---")
         st.markdown("### 2 - Solicitação (Quem nos demanda).")
 
-        data_protocolo = st.date_input("Data Protocolo", None)
-        data_recebido = st.date_input("Data Recebido", None)
-        remetente_unidade = st.text_input("Remetente Unidade")
-        num_documento = st.text_input("Nº Documento")
-        prazo = st.date_input("Prazo", None)
+        data_protocolo = st.date_input("Data Protocolo", value=None)
+        data_recebimento_solicitacao = st.date_input("Data Recebimento / Solicitação", value=None)
+        doc_sei1 = st.text_input("Doc. SEI 1", value="")
+        remetente_unidade = st.text_input("Remetente / Unidade", value="")
+        data_resposta = st.date_input("Data Resposta", value=None)
+        doc_sei2 = st.text_input("Doc. SEI 2", value="")
 
         st.markdown("---")
-        st.markdown("### 3 - Devolutiva - (Nossa Resposta)")
+        st.markdown("### 3 - Encerramento")
 
-        devoluitiva = st.text_input("Devoluitiva - Nossa Resposta")
-        doc_sei = st.text_input("Doc. SEI")
-        data_envio = st.date_input("Data Envio", None)
-        unidade_devoluitiva = st.text_input("Unidade Devoluitiva")
-
-        st.markdown("---")
-        st.markdown("### 4 - Encerramento")
-
-        data_De_retorno = st.date_input("Data de Retorno", None)
-        status = st.text_input("Status")
+        status = st.text_input("Status", value="")
+        data_status = st.date_input("Data Status", value=None)
 
         if st.button("Enviar"):
             # Conecta ao banco de dados
@@ -92,20 +152,18 @@ def main():
             # Insere os dados do formulário na tabela
             cursor.execute('''
                 INSERT INTO formulario (
-                    Processo, Unidade, Interessado,
-                    Especificações, Resoluções, Marcador,
-                    Data_protocolo, Data_recebido,
-                    Remetente_Unidade, Num_Documento, Prazo,
-                    Devoluitiva, Doc_SEI, Data_envio, Unidade_devoluitiva,
-                    Data_De_retorno, Status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    Processo, Interessado, Especificações,
+                    Marcador, Resoluções, Data_protocolo,
+                    Data_recebimento_solicitacao, Doc_SEI1,
+                    Remetente_unidade, Data_resposta,
+                    Doc_SEI2, Data_status, Status
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                processo, unidade, interessado,
-                especificacoes, resolucoes, marcador,
-                data_protocolo, data_recebido,
-                remetente_unidade, num_documento, prazo,
-                devoluitiva, doc_sei, data_envio, unidade_devoluitiva,
-                data_De_retorno, status
+                processo, interessado, especificacoes,
+                marcador, resolucoes, data_protocolo,
+                data_recebimento_solicitacao, doc_sei1,
+                remetente_unidade, data_resposta,
+                doc_sei2, data_status, status
             ))
 
             # Commita as mudanças no banco de dados
@@ -115,6 +173,9 @@ def main():
             conn.close()
 
             st.success("Dados enviados com sucesso!")
+
+            # Limpa os campos do formulário
+            st.empty()
 
     elif menu_option == "Consultar Processo":
         st.header("Consulta de Dados por Número de Processo")
@@ -142,30 +203,18 @@ def main():
                 # Exibe os dados com título e descrição
                 for index, row in df.iterrows():
                     st.subheader(f"Número do Processo: {row['Processo']}")
-                    st.write(f"**Unidade:** {row['Unidade']}")
                     st.write(f"**Interessado:** {row['Interessado']}")
                     st.write(f"**Especificações:** {row['Especificações']}")
-                    st.write(f"**Resoluções:** {row['Resoluções']}")
                     st.write(f"**Marcador:** {row['Marcador']}")
+                    st.write(f"**Resoluções:** {row['Resoluções']}")
                     st.write(f"**Data Protocolo:** {row['Data_protocolo']}")
-                    st.write(f"**Data Recebido:** {row['Data_recebido']}")
-                    st.write(f"**Remetente Unidade:** {row['Remetente_Unidade']}")
-                    st.write(f"**Nº Documento:** {row['Num_Documento']}")
-                    st.write(f"**Prazo:** {row['Prazo']}")
-                    st.write(f"**Devoluitiva:** {row['Devoluitiva']}")
-                    st.write(f"**Doc. SEI:** {row['Doc_SEI']}")
-                    st.write(f"**Data Envio:** {row['Data_envio']}")
-                    st.write(f"**Unidade Devoluitiva:** {row['Unidade_devoluitiva']}")
-                    st.write(f"**Data De Retorno:** {row['Data_De_Retorno']}")
+                    st.write(f"**Data Recebimento / Solicitação:** {row['Data_recebimento_solicitacao']}")
+                    st.write(f"**Doc. SEI 1:** {row['Doc_SEI1']}")
+                    st.write(f"**Remetente / Unidade:** {row['Remetente_unidade']}")
+                    st.write(f"**Data Resposta:** {row['Data_resposta']}")
+                    st.write(f"**Doc. SEI 2:** {row['Doc_SEI2']}")
                     st.write(f"**Status:** {row['Status']}")
-                    # if st.button("Excluir este registro", key=f"delete_{row['id']}", help="Clique para excluir este registro"): 
-                    #     conn = sqlite3.connect('dados_formulario.db')
-                    #     cursor = conn.cursor()
-                    #     cursor.execute(f"DELETE FROM formulario WHERE id={row['id']}")
-                    #     conn.commit()
-                    #     conn.close()
-                    #     st.success("Registro excluído com sucesso!")
-                        
+                    st.write(f"**Data Status:** {row['Data_status']}")
                     st.markdown("---")
 
     elif menu_option == "Baixar Dados como CSV":
@@ -182,10 +231,9 @@ def main():
 
         # Formatar as datas antes de salvar como CSV
         df['Data_protocolo'] = pd.to_datetime(df['Data_protocolo']).dt.strftime('%d/%m/%Y')
-        df['Data_recebido'] = pd.to_datetime(df['Data_recebido']).dt.strftime('%d/%m/%Y')
-        df['Data_envio'] = pd.to_datetime(df['Data_envio']).dt.strftime('%d/%m/%Y')
-        df['Data_De_Retorno'] = pd.to_datetime(df['Data_De_Retorno']).dt.strftime('%d/%m/%Y')
-        df['Prazo'] = pd.to_datetime(df['Prazo']).dt.strftime('%d/%m/%Y')
+        df['Data_recebimento_solicitacao'] = pd.to_datetime(df['Data_recebimento_solicitacao']).dt.strftime('%d/%m/%Y')
+        df['Data_resposta'] = pd.to_datetime(df['Data_resposta']).dt.strftime('%d/%m/%Y')
+        df['Data_status'] = pd.to_datetime(df['Data_status']).dt.strftime('%d/%m/%Y')
 
         # Fecha a conexão
         conn.close()
@@ -196,7 +244,7 @@ def main():
             b64 = base64.b64encode(csv.encode()).decode()
             href = f'<a href="data:file/csv;base64,{b64}" download="dados_formulario.csv">Baixar CSV</a>'
             st.markdown(href, unsafe_allow_html=True)
-    
+
     elif menu_option == "Visualizar Todos os Registros":
         st.header("Todos os Registros do Banco de Dados")
 
@@ -222,4 +270,3 @@ def main():
 if __name__ == "__main__":
     create_table()
     main()
-
