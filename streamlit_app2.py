@@ -6,6 +6,8 @@ import sqlite3
 import pandas as pd
 import base64
 import time
+import jwt
+from datetime import datetime, timedelta
 
 # Função para verificar o token JWT em cada rota protegida
 def verify_access():
